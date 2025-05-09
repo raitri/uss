@@ -4,19 +4,27 @@ var game, snake, foodManager;
  
 game = {
   score: 0,
+  coins: 0,
   fps: 5,
   over: true,
-  paused: false, // Add a paused flag
+  paused: false,
   message: 'Press Space to Start',
+  powerups: {
+    invincible: false,
+    invincibleEndTime: 0
+  },
  
   start: function () {
     game.over = false;
-    game.paused = false; // Reset pause when starting the game
+    game.paused = false;
     game.message = null;
     game.score = 0;
+    game.coins = 0;
     game.fps = 5;
+    game.powerups.invincible = false;
     snake.init();
     foodManager.init();
+    updateCoinsDisplay();
   },
  
   stop: function () {
@@ -41,23 +49,17 @@ game = {
       context.strokeText(game.message, canvas.width / 2, canvas.height / 2);
     }
  
-    // Draw pause message if game is paused
     if (game.paused) {
       context.fillStyle = '#00F';
       context.strokeStyle = '#FFF';
       context.font = (canvas.height / 12) + 'px Impact';
       context.textAlign = 'center';
- 
-      // "Game Paused" message
       context.fillText('Game Paused', canvas.width / 2, canvas.height / 2 - 20);
       context.strokeText('Game Paused', canvas.width / 2, canvas.height / 2 - 20);
- 
-      // "Press Space to Continue" message (with a gap)
       context.fillText('Press Space to Continue', canvas.width / 2, canvas.height / 2 + 60);
       context.strokeText('Press Space to Continue', canvas.width / 2, canvas.height / 2 + 60);
     }
   },
- 
  
   resetCanvas: function () {
     context.clearRect(0, 0, canvas.width, canvas.height);
@@ -88,23 +90,40 @@ snake = {
   },
  
   move: function () {
-    if (!game.over && !game.paused) { // Prevent movement when paused
+  if (!game.over && !game.paused) {
       const head = snake.sections[0];
       let newX = head.x;
       let newY = head.y;
- 
+
       switch (snake.direction) {
-        case 'up': newY -= snake.size; break;
-        case 'down': newY += snake.size; break;
-        case 'left': newX -= snake.size; break;
-        case 'right': newX += snake.size; break;
+          case 'up': newY -= snake.size; break;
+          case 'down': newY += snake.size; break;
+          case 'left': newX -= snake.size; break;
+          case 'right': newX += snake.size; break;
       }
- 
-      if (snake.isCollision(newX, newY)) {
-        game.stop();
-        return;
+
+      // Handle wall collisions differently when invincible
+      if (game.powerups.invincible) {
+          if (newX < snake.size / 2) {
+              newX = snake.size / 2;
+              snake.direction = 'right'; // Bounce right
+          } else if (newX >= canvas.width - snake.size / 2) {
+              newX = canvas.width - snake.size / 2 - 1;
+              snake.direction = 'left'; // Bounce left
+          }
+          
+          if (newY < snake.size / 2) {
+              newY = snake.size / 2;
+              snake.direction = 'down'; // Bounce down
+          } else if (newY >= canvas.height - snake.size / 2) {
+              newY = canvas.height - snake.size / 2 - 1;
+              snake.direction = 'up'; // Bounce up
+          }
+      } else if (snake.isCollision(newX, newY)) {
+          game.stop();
+          return;
       }
- 
+
       snake.sections.unshift({ x: newX, y: newY, type: 'head' });
       if (snake.sections.length > 1) {
         snake.sections[1].type = 'body';
@@ -138,11 +157,10 @@ snake = {
       let flipY = false;
       let rotation = 0;
  
-      // Check if the snake's score is >= 10, apply a red color filter
       if (game.score >= 10) {
         context.filter = 'saturate(3) hue-rotate(-120deg)';
       } else {
-        context.filter = 'none'; // Reset to default if score < 10
+        context.filter = 'none';
       }
 
       switch (part.type) {
@@ -197,13 +215,19 @@ snake = {
   },
  
   isCollision: function (x, y) {
+    // When invincible, only check for self-collisions
+    if (game.powerups.invincible) {
+        return snake.sections.some((s, i) => i !== 0 && s.x === x && s.y === y);
+    }
+    
+    // Normal collision detection
     if (
-      x < snake.size / 2 || x >= canvas.width ||
-      y < snake.size / 2 || y >= canvas.height
+        x < snake.size / 2 || x >= canvas.width ||
+        y < snake.size / 2 || y >= canvas.height
     ) return true;
- 
+
     return snake.sections.some((s, i) => i !== 0 && s.x === x && s.y === y);
-  }
+}
 };
  
 foodManager = {
@@ -245,6 +269,8 @@ foodManager = {
     for (let i = 0; i < this.foods.length; i++) {
       if (Math.round(this.foods[i].x) === Math.round(x) && Math.round(this.foods[i].y) === Math.round(y)) {
         this.foods.splice(i, 1);
+        game.coins++;
+        updateCoinsDisplay();
         return true;
       }
     }
@@ -256,6 +282,35 @@ foodManager = {
   }
 };
  
+// Shop and Powerup Functions
+function buyPowerup(type) {
+  if (game.over) return;
+  
+  const cost = 5;
+  if (game.coins >= cost) {
+    game.coins -= cost;
+    updateCoinsDisplay();
+    
+    if (type === 'invincible') {
+      game.powerups.invincible = true;
+      game.powerups.invincibleEndTime = Date.now() + 5000;
+    }
+  }
+}
+
+function updateCoinsDisplay() {
+  const coinsElement = document.getElementById('coins');
+  if (coinsElement) {
+    coinsElement.textContent = 'Coins: ' + game.coins;
+  }
+}
+
+function checkPowerups() {
+  if (game.powerups.invincible && Date.now() > game.powerups.invincibleEndTime) {
+    game.powerups.invincible = false;
+  }
+}
+
 var inverseDirection = {
   'up': 'down',
   'left': 'right',
@@ -289,7 +344,7 @@ addEventListener("keydown", function (e) {
   } else if (lastKey === 'start_game' && game.over) {
     game.start();
   } else if (lastKey === 'start_game' && !game.over) {
-    game.paused = !game.paused; // Toggle pause state
+    game.paused = !game.paused;
   }
 }, false);
  
@@ -299,16 +354,30 @@ var requestAnimationFrame = window.requestAnimationFrame ||
  
 function loop() {
   game.resetCanvas();
- 
-  if (!game.over && !game.paused) { // Prevent updates if paused
+  
+  if (!game.over && !game.paused) {
+    checkPowerups();
     snake.move();
     foodManager.draw();
     snake.draw();
   }
- 
+
   game.drawScore();
   game.drawMessage();
- 
+  
+  if (game.powerups.invincible) {
+    context.fillStyle = 'rgba(0, 255, 255, 0.1)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const timeLeft = Math.ceil((game.powerups.invincibleEndTime - Date.now()) / 1000);
+    context.fillStyle = '#00F';
+    context.strokeStyle = '#FFF';
+    context.font = (canvas.height / 15) + 'px Impact';
+    context.textAlign = 'center';
+    context.fillText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
+    context.strokeText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
+}
+
   setTimeout(function () {
     requestAnimationFrame(loop);
     CanPressButton = true;
@@ -316,5 +385,3 @@ function loop() {
 }
  
 requestAnimationFrame(loop);
- 
- 
