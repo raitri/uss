@@ -132,12 +132,17 @@ snake = {
       let ateFood = foodManager.checkCollision(newX, newY);
       if (ateFood) {
         game.score++;
-        if (game.fps < 30) game.fps++;
-
+  
         if (game.score % 10 === 0) {
           foodManager.increaseFoodCount();
         }
-
+  
+        // Speed increases every 5 foods
+        if (game.score % 5 === 0) {
+          game.fps += 0.5;
+          game.fps = Math.min(game.fps, 15); // Cap at 15 FPS
+        }
+  
         foodManager.set();
       } else {
         snake.sections.pop();
@@ -157,7 +162,7 @@ snake = {
       let flipY = false;
       let rotation = 0;
 
-      if (game.score >= 10) {
+      if (game.powerups.redSnake) {
         context.filter = 'saturate(3) hue-rotate(-120deg)';
       } else {
         context.filter = 'none';
@@ -282,19 +287,25 @@ foodManager = {
   }
 };
 
-// Shop and Powerup Functions
 function buyPowerup(type) {
   if (game.over) return;
 
-  const cost = 5;
-  if (game.coins >= cost) {
-    game.coins -= cost;
+  if (type === 'redsnake' && game.coins >= 10) {
+    game.coins -= 10;
     updateCoinsDisplay();
-
-    if (type === 'invincible') {
-      game.powerups.invincible = true;
-      game.powerups.invincibleEndTime = Date.now() + 5000;
-    }
+    game.powerups.redSnake = true;
+  }
+  else if (type === 'invincible' && game.coins >= 5) {
+    game.coins -= 5;
+    updateCoinsDisplay();
+    game.powerups.invincible = true;
+    game.powerups.invincibleEndTime = Date.now() + 5000; // 5 seconds of invincibility
+  }
+  else if (type === 'slowsnake' && game.coins >= 15) {
+    game.coins -= 15;
+    updateCoinsDisplay();
+    game.slowSnake = true;
+    game.slowSnakeEndTime = Date.now() + 10000; // 10 seconds
   }
 }
 
