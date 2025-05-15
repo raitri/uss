@@ -8,10 +8,17 @@ game = {
   fps: 5,
   over: true,
   paused: false,
+  pauseStartTime: 0,
+  pausedPowerups: {
+    invincibleRemaining: 0,
+    slowRemaining: 0
+  },
   message: 'Press Space to Start',
   powerups: {
     invincible: false,
-    invincibleEndTime: 0
+    invincibleEndTime: 0,
+    slowMultiplier: 1,
+    slowEndTime: 0
   },
 
   start: function () {
@@ -21,7 +28,16 @@ game = {
     game.score = 0;
     game.coins = 0;
     game.fps = 5;
-    game.powerups.invincible = false;
+    game.powerups = {
+      invincible: false,
+      invincibleEndTime: 0,
+      slowMultiplier: 1,
+      slowEndTime: 0
+    };
+    game.pausedPowerups = {
+      invincibleRemaining: 0,
+      slowRemaining: 0
+    };
     snake.init();
     foodManager.init();
     updateCoinsDisplay();
@@ -30,6 +46,8 @@ game = {
   stop: function () {
     game.over = true;
     game.message = 'GAME OVER';
+    game.powerups.slowMultiplier = 1;
+    game.powerups.slowEndTime = 0;
   },
 
   drawScore: function () {
@@ -132,17 +150,13 @@ snake = {
       let ateFood = foodManager.checkCollision(newX, newY);
       if (ateFood) {
         game.score++;
-  
+        game.fps += 0.5;  // Increase speed with every food
+        game.fps = Math.min(game.fps, 15);  // Maintain 15 FPS cap
+      
         if (game.score % 10 === 0) {
           foodManager.increaseFoodCount();
         }
-  
-        // Speed increases every 5 foods
-        if (game.score % 5 === 0) {
-          game.fps += 0.5;
-          game.fps = Math.min(game.fps, 15); // Cap at 15 FPS
-        }
-  
+      
         foodManager.set();
       } else {
         snake.sections.pop();
@@ -304,8 +318,8 @@ function buyPowerup(type) {
   else if (type === 'slowsnake' && game.coins >= 15) {
     game.coins -= 15;
     updateCoinsDisplay();
-    game.slowSnake = true;
-    game.slowSnakeEndTime = Date.now() + 10000; // 10 seconds
+    game.powerups.slowMultiplier = 0.5;  // Halve the speed
+    game.powerups.slowEndTime = Date.now() + 10000; // 10 seconds duration
   }
 }
 
@@ -319,6 +333,9 @@ function updateCoinsDisplay() {
 function checkPowerups() {
   if (game.powerups.invincible && Date.now() > game.powerups.invincibleEndTime) {
     game.powerups.invincible = false;
+  }
+  if (Date.now() > game.powerups.slowEndTime) {
+    game.powerups.slowMultiplier = 1;
   }
 }
 
@@ -355,7 +372,30 @@ addEventListener("keydown", function (e) {
   } else if (lastKey === 'start_game' && game.over) {
     game.start();
   } else if (lastKey === 'start_game' && !game.over) {
+    const wasPaused = game.paused;
     game.paused = !game.paused;
+    
+    if (!wasPaused && game.paused) {
+      // Store remaining times when pausing
+      game.pauseStartTime = Date.now();
+      game.pausedPowerups.invincibleRemaining = Math.max(0, game.powerups.invincibleEndTime - game.pauseStartTime);
+      game.pausedPowerups.slowRemaining = Math.max(0, game.powerups.slowEndTime - game.pauseStartTime);
+    } else if (wasPaused && !game.paused) {
+      // Adjust timers when unpausing
+      const now = Date.now();
+      const pauseDuration = now - game.pauseStartTime;
+      
+      if (game.pausedPowerups.invincibleRemaining > 0) {
+        game.powerups.invincibleEndTime = now + game.pausedPowerups.invincibleRemaining;
+      }
+      if (game.pausedPowerups.slowRemaining > 0) {
+        game.powerups.slowEndTime = now + game.pausedPowerups.slowRemaining;
+      }
+      
+      // Reset pause tracking
+      game.pausedPowerups.invincibleRemaining = 0;
+      game.pausedPowerups.slowRemaining = 0;
+    }
   }
 }, false);
 
@@ -377,22 +417,45 @@ function loop() {
   game.drawMessage();
 
   if (game.powerups.invincible) {
-    context.fillStyle = 'rgba(0, 255, 255, 0.1)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    let timeLeft;
+    if (game.paused && game.pausedPowerups.invincibleRemaining > 0) {
+      timeLeft = Math.ceil(game.pausedPowerups.invincibleRemaining / 1000);
+    } else {
+      timeLeft = Math.ceil((game.powerups.invincibleEndTime - Date.now()) / 1000);
+    }
+    
+    if (timeLeft > 0) {
+      context.fillStyle = '#00F';
+      context.strokeStyle = '#FFF';
+      context.font = (canvas.height / 15) + 'px Impact';
+      context.textAlign = 'center';
+      context.fillText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
+      context.strokeText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
+    }
+  }
 
-    const timeLeft = Math.ceil((game.powerups.invincibleEndTime - Date.now()) / 1000);
-    context.fillStyle = '#00F';
-    context.strokeStyle = '#FFF';
-    context.font = (canvas.height / 15) + 'px Impact';
-    context.textAlign = 'center';
-    context.fillText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
-    context.strokeText('INVINCIBLE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 20);
+  if (Date.now() < game.powerups.slowEndTime || (game.paused && game.pausedPowerups.slowRemaining > 0)) {
+    let timeLeft;
+    if (game.paused && game.pausedPowerups.slowRemaining > 0) {
+      timeLeft = Math.ceil(game.pausedPowerups.slowRemaining / 1000);
+    } else {
+      timeLeft = Math.ceil((game.powerups.slowEndTime - Date.now()) / 1000);
+    }
+    
+    if (timeLeft > 0) {
+      context.fillStyle = '#00F';
+      context.strokeStyle = '#FFF';
+      context.font = (canvas.height / 15) + 'px Impact';
+      context.textAlign = 'center';
+      context.fillText('SLOW MODE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 50);
+      context.strokeText('SLOW MODE: ' + timeLeft + 's', canvas.width / 2, canvas.height - 50);
+    }
   }
 
   setTimeout(function () {
     requestAnimationFrame(loop);
     CanPressButton = true;
-  }, 1000 / game.fps);
+  }, 1000 / (game.fps * game.powerups.slowMultiplier));
 }
 
 requestAnimationFrame(loop);
